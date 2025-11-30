@@ -1,202 +1,387 @@
-# 小米IoT摄像头桥接程序 / Xiaomi IoT Camera Bridge
+# MIoT LAN Device Discovery
 
-基于命令行的小米OAuth2认证客户端，实现token获取和自动刷新功能。
+一个用C++实现的小米IoT设备局域网发现工具，基于小米OTU（One Touch）协议。
 
-A command-line Xiaomi OAuth2 authentication client with automatic token refresh.
+## 功能特性
 
-## ✨ 特性 / Features
+- ✅ **自动发现**: 自动发现局域网内的小米IoT设备
+- ✅ **多网卡支持**: 支持指定多个网络接口进行扫描
+- ✅ **设备状态监控**: 实时监控设备上线/下线状态
+- ✅ **回调机制**: 支持注册回调函数，接收设备状态变化通知
+- ✅ **跨平台**: 支持 Linux、macOS、Windows
+- ✅ **线程安全**: 使用互斥锁保护共享数据
+- ✅ **智能扫描**: 采用指数退避策略，从5秒到45秒动态调整扫描间隔
 
-- ✅ 完整的OAuth2授权流程
-- ✅ 自动打开浏览器进行授权
-- ✅ Token持久化存储（JSON格式）
-- ✅ 自动检测token过期并刷新
-- ✅ 命令行友好的交互界面
-- ✅ 纯C++实现，无需Python依赖
-- ✅ 跨平台支持（macOS/Linux）
+## 技术原理
 
-## 📋 依赖 / Dependencies
+### OTU协议（One Touch）
 
-- C++17编译器 (GCC 7+ / Clang 5+ / MSVC 2017+)
+OTU是小米开发的局域网设备发现协议，基于UDP广播：
+
+- **端口**: 54321
+- **协议头**: `0x21 0x31` ("!1")
+- **探测消息**: 32字节固定格式
+- **响应消息**: 32字节或更长
+
+### 消息格式
+
+**探测消息（Probe Message）**:
+```
+Offset | Length | Description
+-------|--------|-------------
+0-1    | 2      | Header: 0x21 0x31 ("!1")
+2-3    | 2      | Length: 0x00 0x20 (32 bytes)
+4-15   | 12     | Unknown: 0xFF * 12
+16-19  | 4      | Magic: "MDID"
+20-27  | 8      | Virtual Device ID (big endian)
+28-31  | 4      | Padding: 0x00 * 4
+```
+
+**响应消息（Response Message）**:
+```
+Offset | Length | Description
+-------|--------|-------------
+0-1    | 2      | Header: 0x21 0x31
+2-3    | 2      | Length
+4-11   | 8      | Real Device ID (DID, big endian)
+12-15  | 4      | Timestamp (Unix timestamp, big endian)
+16-... | var    | Additional device info (optional)
+```
+
+## 编译
+
+### 前置要求
+
+- C++17或更高版本
 - CMake 3.10+
-- libcurl (HTTP请求)
-- nlohmann/json (JSON解析)
-- OpenSSL (SHA1哈希)
+- 支持的编译器：
+  - GCC 7.0+
+  - Clang 5.0+
+  - MSVC 2017+
 
-## 🚀 安装依赖 / Install Dependencies
-
-### macOS
-```bash
-brew install cmake curl nlohmann-json openssl
-```
-
-### Ubuntu/Debian
-```bash
-sudo apt install cmake libcurl4-openssl-dev nlohmann-json3-dev libssl-dev build-essential
-```
-
-### Fedora/RHEL
-```bash
-sudo dnf install cmake libcurl-devel json-devel openssl-devel gcc-c++
-```
-
-## 🔨 编译 / Build
+### Linux / macOS
 
 ```bash
-cd /Users/jiadiy/Workspace/miot_camera_bridge
+# 进入项目目录
+cd /Users/jiadiy/Workspace/miot_camera_bridge/
+
+# 创建构建目录
 mkdir build && cd build
+
+# 生成Makefile
 cmake ..
+
+# 编译
 make
+
+# 运行
+./miot_lan_discovery_demo
 ```
 
-## 🎯 使用 / Usage
-
-### 首次运行 / First Run
+### 编译选项
 
 ```bash
-./miot_bridge
+# Debug模式
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+
+# Release模式（优化）
+cmake -DCMAKE_BUILD_TYPE=Release ..
+
+# 安装到系统
+sudo make install
 ```
 
-程序会：
-1. 自动打开浏览器到小米授权页面
-2. 引导您登录小米账号并授权
-3. 启动本地HTTP服务器（端口8888）接收OAuth回调
-4. 自动保存token到 `miot_token.json`
+## 使用方法
 
-The program will:
-1. Automatically open browser to Xiaomi authorization page
-2. Guide you to login and authorize
-3. Start local HTTP server (port 8888) to receive OAuth callback
-4. Automatically save token to `miot_token.json`
+### 基础用法
 
-### 后续运行 / Subsequent Runs
+```bash
+# 自动检测所有网络接口
+./miot_lan_discovery_demo
 
-程序会：
-1. 自动加载已保存的token
-2. 检查token有效性
-3. 必要时自动刷新token
-4. 进入主循环，持续监控token状态
+# 指定网络接口
+./miot_lan_discovery_demo -i en0
 
-The program will:
-1. Automatically load saved token
-2. Check token validity
-3. Auto-refresh if needed
-4. Enter main loop to monitor token status
+# 指定多个网络接口
+./miot_lan_discovery_demo -i eth0 -i wlan0
 
-## 📁 Token文件格式 / Token File Format
+# 设置设备超时时间为120秒
+./miot_lan_discovery_demo --timeout 120
 
-`miot_token.json` 包含：
+# 设置扫描间隔（最小10秒，最大60秒）
+./miot_lan_discovery_demo --min-interval 10 --max-interval 60
 
-```json
-{
-    "access_token": "AgH7Yk...",
-    "refresh_token": "AgGt3X...",
-    "expires_at": 1735564800
+# 指定虚拟设备ID
+./miot_lan_discovery_demo --did 123456789012345678
+```
+
+### 命令行参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `-i, --interface <name>` | 网络接口名称（可多次指定） | 所有接口 |
+| `-d, --did <number>` | 虚拟设备ID | 随机生成 |
+| `-t, --timeout <seconds>` | 设备超时时间（秒） | 100 |
+| `--min-interval <secs>` | 最小扫描间隔（秒） | 5 |
+| `--max-interval <secs>` | 最大扫描间隔（秒） | 45 |
+| `-h, --help` | 显示帮助信息 | - |
+
+## 编程接口
+
+### 示例代码
+
+```cpp
+#include "miot_lan_device.h"
+#include <iostream>
+
+// 设备状态变化回调
+void on_device_changed(const std::string& did, const miot::DeviceInfo& info) {
+    std::cout << "Device " << did << " is " 
+              << (info.online ? "ONLINE" : "OFFLINE") 
+              << " at " << info.ip << std::endl;
+}
+
+int main() {
+    // 创建发现器实例（扫描所有接口）
+    miot::MIoTLanDiscovery discovery;
+    
+    // 或者指定接口
+    // miot::MIoTLanDiscovery discovery({"en0", "en1"});
+    
+    // 配置参数
+    discovery.set_device_timeout(120.0);
+    discovery.set_scan_intervals(5.0, 45.0);
+    
+    // 注册回调
+    discovery.register_callback("my_callback", on_device_changed);
+    
+    // 启动发现
+    if (!discovery.start()) {
+        std::cerr << "Failed to start discovery" << std::endl;
+        return 1;
+    }
+    
+    // 等待一段时间
+    std::this_thread::sleep_for(std::chrono::seconds(60));
+    
+    // 获取所有设备
+    auto devices = discovery.get_devices();
+    for (const auto& pair : devices) {
+        const auto& dev = pair.second;
+        std::cout << "DID: " << dev.did 
+                  << ", IP: " << dev.ip 
+                  << ", Status: " << (dev.online ? "Online" : "Offline")
+                  << std::endl;
+    }
+    
+    // 手动触发一次扫描
+    discovery.ping();
+    
+    // 停止发现
+    discovery.stop();
+    
+    return 0;
 }
 ```
 
-- `access_token`: 访问令牌，用于API调用
-- `refresh_token`: 刷新令牌，用于获取新的access_token
-- `expires_at`: Unix时间戳，token过期时间
+### API参考
 
-## 🔌 集成到您的项目 / Integration
-
-### 方法1: 作为独立进程运行
-
-运行 `miot_bridge` 并从 `miot_token.json` 读取token：
+#### 构造函数
 
 ```cpp
-#include <nlohmann/json.hpp>
-#include <fstream>
-
-std::string load_access_token() {
-    std::ifstream file("miot_token.json");
-    nlohmann::json token_json;
-    file >> token_json;
-    return token_json["access_token"];
-}
-
-// 使用token
-std::string token = load_access_token();
-miot_camera_init(..., token.c_str());
+MIoTLanDiscovery(
+    const std::vector<std::string>& interfaces = {},
+    uint64_t virtual_did = 0
+)
 ```
 
-### 方法2: 集成OAuth库到您的代码
+- `interfaces`: 要扫描的网络接口列表，空则自动检测
+- `virtual_did`: 虚拟设备ID，0则随机生成
+
+#### 主要方法
 
 ```cpp
-#include "miot_oauth.h"
+// 启动设备发现
+bool start();
 
-// 创建OAuth客户端
-miot::MiotOAuth oauth(CLIENT_ID, REDIRECT_URI);
+// 停止设备发现
+void stop();
 
-// 加载token
-if (!oauth.init("miot_token.json")) {
-    // 需要重新授权
-    // ... 启动授权流程
-}
+// 检查是否正在运行
+bool is_running() const;
 
-// 获取access_token
-std::string token = oauth.get_token().access_token;
+// 手动发送探测消息
+void ping(const std::string& interface_name = "", const std::string& target_ip = "");
 
-// 使用token初始化摄像头库
-miot_camera_init("mico.api.mijia.tech", CLIENT_ID, token.c_str());
+// 获取所有设备
+std::map<std::string, DeviceInfo> get_devices() const;
+
+// 获取指定设备
+std::shared_ptr<DeviceInfo> get_device(const std::string& did) const;
+
+// 注册回调
+void register_callback(const std::string& key, DeviceStatusCallback callback);
+
+// 注销回调
+void unregister_callback(const std::string& key);
+
+// 设置扫描间隔
+void set_scan_intervals(double min_interval, double max_interval);
+
+// 设置设备超时
+void set_device_timeout(double timeout);
 ```
 
-## 🔄 自动刷新机制 / Auto-Refresh
-
-程序会：
-- 每分钟检查一次token状态
-- 在token过期前10分钟自动刷新
-- 刷新后自动保存到文件
-- 失败时提示用户重新授权
-
-The program will:
-- Check token status every minute
-- Auto-refresh 10 minutes before expiration
-- Save automatically after refresh
-- Prompt for re-authentication if refresh fails
-
-## 📝 配置说明 / Configuration
-
-可在 `src/main.cpp` 中修改以下常量：
+#### DeviceInfo结构
 
 ```cpp
-const std::string CLIENT_ID = "2882303761520431603";  // 小米OAuth2客户端ID
-const std::string REDIRECT_URI = "http://localhost:8888/callback";  // 回调地址
-const std::string CLOUD_SERVER = "cn";  // 服务器区域（cn/us/sg等）
-const std::string TOKEN_FILE = "miot_token.json";  // Token文件路径
+struct DeviceInfo {
+    std::string did;           // 设备ID
+    std::string ip;            // IP地址
+    std::string interface;     // 网络接口
+    bool online;               // 在线状态
+    int64_t timestamp_offset;  // 时间偏移
+    std::chrono::steady_clock::time_point last_seen; // 最后发现时间
+};
 ```
 
-## 🐛 故障排除 / Troubleshooting
+## 常见问题
 
-### 端口8888被占用
+### 1. 没有发现任何设备？
 
-修改 `src/main.cpp` 中的端口号：
-```cpp
-miot::SimpleHttpServer server(9999);  // 改为其他端口
+**检查项：**
+- 确保设备和电脑在同一局域网
+- 确保防火墙没有阻止UDP 54321端口
+- 尝试指定网络接口：`-i en0` 或 `-i eth0`
+- 确保设备已开机且连接到网络
+
+### 2. 编译错误：找不到网络相关头文件
+
+**Linux**: 安装开发工具
+```bash
+sudo apt-get install build-essential
 ```
 
-同时修改 REDIRECT_URI：
-```cpp
-const std::string REDIRECT_URI = "http://localhost:9999/callback";
+**macOS**: 安装Xcode命令行工具
+```bash
+xcode-select --install
 ```
 
-### 浏览器未自动打开
+### 3. 权限错误
 
-手动复制URL到浏览器打开。
+某些系统可能需要管理员权限才能绑定到特定网络接口：
 
-### Token刷新失败
+```bash
+# Linux/macOS
+sudo ./miot_lan_discovery_demo
 
-1. 检查网络连接
-2. 确认refresh_token未过期
-3. 重新运行程序进行授权
+# 或者添加capability（Linux）
+sudo setcap cap_net_raw,cap_net_admin=eip ./miot_lan_discovery_demo
+```
 
-## 📄 许可证 / License
+### 4. 如何查看网络接口名称？
 
-遵循原项目许可证（Xiaomi Miloco License Agreement）
+**Linux**:
+```bash
+ip addr show
+# 或
+ifconfig
+```
 
-## 🙏 致谢 / Acknowledgments
+**macOS**:
+```bash
+ifconfig
+# 常见接口：en0（Wi-Fi）, en1（以太网）
+```
 
-基于 [xiaomi-miloco](https://github.com/XiaoMi/xiaomi-miloco) 项目开发。
+**Windows**:
+```bash
+ipconfig
+```
 
-Based on the [xiaomi-miloco](https://github.com/XiaoMi/xiaomi-miloco) project.
+## 项目结构
 
+```
+miot_camera_bridge/
+├── CMakeLists.txt          # CMake构建配置
+├── miot_lan_device.h       # 头文件
+├── miot_lan_device.cpp     # 实现文件
+├── main.cpp                # 示例程序
+├── README.md               # 本文档
+└── build/                  # 构建目录（生成）
+    ├── miot_lan_discovery_demo  # 可执行文件
+    └── libmiot_lan_device.a     # 静态库
+```
+
+## 技术细节
+
+### 线程模型
+
+- **主线程**: 用户应用程序
+- **发现线程**: 周期性发送探测消息并接收响应
+- **超时检查线程**: 周期性检查设备是否超时离线
+
+### 扫描策略
+
+采用**指数退避**策略：
+1. 首次扫描：5秒间隔
+2. 第二次扫描：10秒间隔
+3. 第三次扫描：20秒间隔
+4. 最大间隔：45秒
+
+这样可以在设备启动时快速发现，稳定运行后降低网络负载。
+
+### 设备超时
+
+- 默认超时：100秒
+- 如果100秒内未收到设备响应，标记为离线
+- 设备重新响应后，自动标记为在线
+
+## 集成到您的项目
+
+### 方式1: 作为库使用
+
+```cmake
+# 在您的CMakeLists.txt中
+add_subdirectory(path/to/miot_camera_bridge)
+target_link_libraries(your_app miot_lan_device)
+```
+
+### 方式2: 直接包含源文件
+
+```cmake
+add_executable(your_app
+    your_app.cpp
+    path/to/miot_camera_bridge/miot_lan_device.cpp
+)
+target_include_directories(your_app PRIVATE
+    path/to/miot_camera_bridge
+)
+```
+
+## 下一步
+
+完成了局域网设备发现后，您可能还需要：
+
+1. **获取设备详细信息**: 调用小米云API获取设备名称、型号等
+2. **摄像头连接**: 使用P2P协议连接摄像头并获取视频流
+3. **设备控制**: 通过MQTT或HTTP API控制设备
+
+这些功能需要配合之前实现的Token获取功能使用。
+
+## 许可证
+
+MIT License
+
+## 参考资料
+
+- [小米IoT开发者平台](https://iot.mi.com/)
+- [原项目：Xiaomi Miloco](https://github.com/MiEcosystem/xiaomi-miloco)
+
+## 贡献
+
+欢迎提交Issue和Pull Request！
+
+---
+
+**注意**: 本工具仅供学习和研究使用，请遵守小米IoT平台的使用条款。
