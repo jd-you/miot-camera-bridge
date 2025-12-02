@@ -8,10 +8,11 @@
 
 namespace miot {
 
-SimpleHttpServer::SimpleHttpServer(int port)
+SimpleHttpServer::SimpleHttpServer(int port, bool commnd_line_mode)
     : port_(port)
     , server_fd_(-1)
-    , running_(false) {
+    , running_(false)
+    , commnd_line_mode_(commnd_line_mode) {
 }
 
 SimpleHttpServer::~SimpleHttpServer() {
@@ -73,6 +74,21 @@ void SimpleHttpServer::stop() {
 }
 
 void SimpleHttpServer::server_loop() {
+    if (commnd_line_mode_ == true) {
+        std::string code;
+        std::string state;
+
+        std::cout << "Please enter the code: ";
+        std::cin >> code;
+        std::cout << "Please enter the state: ";
+        std::cin >> state;
+
+        if (callback_) {
+            callback_(code, state);
+        }
+
+        return;
+    }
     while (running_) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);

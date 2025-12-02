@@ -490,6 +490,7 @@ void MIoTLanDiscovery::update_device(
         device->online = true;
         device->timestamp_offset = timestamp_offset;
         device->last_seen = std::chrono::steady_clock::now();
+        device->status_changed_type = DeviceStatusChangedType::NEW;
         
         devices_[did] = device;
         status_changed = true;
@@ -503,6 +504,7 @@ void MIoTLanDiscovery::update_device(
         if (!device->online) {
             device->online = true;
             status_changed = true;
+            device->status_changed_type = DeviceStatusChangedType::ONLINE;
             std::cout << "[MIoTLanDiscovery] Device online: " << did 
                       << " @ " << ip << std::endl;
         }
@@ -510,12 +512,17 @@ void MIoTLanDiscovery::update_device(
         if (device->ip != ip) {
             device->ip = ip;
             status_changed = true;
+            device->status_changed_type = DeviceStatusChangedType::IP_CHANGED;
             std::cout << "[MIoTLanDiscovery] Device IP changed: " << did 
                       << " -> " << ip << std::endl;
         }
         
         if (device->interface != interface_name) {
             device->interface = interface_name;
+            status_changed = true;
+            device->status_changed_type = DeviceStatusChangedType::INTERFACE_CHANGED;
+            std::cout << "[MIoTLanDiscovery] Device interface changed: " << did 
+                      << " -> " << interface_name << std::endl;
         }
         
         device->timestamp_offset = timestamp_offset;
@@ -542,6 +549,7 @@ void MIoTLanDiscovery::check_device_timeouts() {
             
             if (elapsed >= device_timeout_) {
                 device->online = false;
+                device->status_changed_type = DeviceStatusChangedType::OFFLINE;
                 std::cout << "[MIoTLanDiscovery] Device offline (timeout): " 
                           << device->did << std::endl;
                 notify_callbacks(device->did, *device);

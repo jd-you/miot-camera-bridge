@@ -23,6 +23,14 @@
 
 namespace miot {
 
+enum class DeviceStatusChangedType {
+    NEW = 1,
+    ONLINE = 2,
+    OFFLINE = 3,
+    IP_CHANGED = 4,
+    INTERFACE_CHANGED = 5
+};
+
 /**
  * @brief Device information structure
  */
@@ -33,6 +41,7 @@ struct DeviceInfo {
     bool online;               // Online status
     int64_t timestamp_offset;  // Time offset from device
     std::chrono::steady_clock::time_point last_seen; // Last seen time
+    DeviceStatusChangedType status_changed_type; // Status changed type
     
     DeviceInfo() : online(false), timestamp_offset(0) {}
 };

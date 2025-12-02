@@ -13,7 +13,7 @@ class SimpleHttpServer {
 public:
     using CallbackHandler = std::function<void(const std::string& code, const std::string& state)>;
     
-    SimpleHttpServer(int port = 8888);
+    SimpleHttpServer(int port = 8888, bool commnd_line_mode = false);
     ~SimpleHttpServer();
     
     // 启动服务器
@@ -31,6 +31,7 @@ private:
     std::atomic<bool> running_;
     std::thread server_thread_;
     CallbackHandler callback_;
+    bool commnd_line_mode_;
     
     void server_loop();
     void handle_request(int client_fd);

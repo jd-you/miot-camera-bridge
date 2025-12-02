@@ -4,6 +4,8 @@
 #include <string>
 #include <functional>
 #include <chrono>
+#include <thread>
+#include <atomic>
 
 namespace miot {
 
@@ -28,7 +30,8 @@ class MiotOAuth {
 public:
     MiotOAuth(const std::string& client_id, 
               const std::string& redirect_uri,
-              const std::string& cloud_server = "cn");
+              const std::string& cloud_server = "cn",
+              const std::string& token_file = "miot_token.json");
     ~MiotOAuth();
     
     // 初始化（从文件加载token）
@@ -40,6 +43,9 @@ public:
     // 启动OAuth流程（会启动本地服务器接收回调）
     bool start_auth_flow();
     
+    // 停止OAuth流程
+    bool stop_auth_flow();
+    
     // 用授权码换取token
     bool exchange_code_for_token(const std::string& code, const std::string& state);
     
@@ -47,11 +53,11 @@ public:
     bool refresh_token();
     
     // 获取当前token
-    const TokenInfo& get_token() const { return token_; }
+    bool get_token(TokenInfo& token, std::chrono::seconds timeout = std::chrono::seconds(120));
     
     // 保存token到文件
     bool save_token(const std::string& filename = "miot_token.json") const;
-    
+
     // 从文件加载token
     bool load_token(const std::string& filename = "miot_token.json");
     
@@ -65,6 +71,7 @@ private:
     std::string oauth_host_;
     std::string state_;
     std::string device_id_;
+    std::string token_file_;
     TokenInfo token_;
     
     // HTTP请求
@@ -76,6 +83,11 @@ private:
     
     // URL编码
     std::string url_encode(const std::string& value) const;
+
+    void token_refresh_loop();
+
+    std::atomic<bool> should_exit_;
+    std::thread token_refresh_thread_;
 };
 
 } // namespace miot

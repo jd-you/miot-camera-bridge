@@ -7,10 +7,22 @@
 #include <iostream>
 #include <random>
 #include <openssl/sha.h>
+#include "http_server.h"
 
 using json = nlohmann::json;
 
 namespace miot {
+
+#ifdef __APPLE__
+#include <cstdlib>
+#define OPEN_BROWSER(url) std::system(("open \"" + url + "\" 2>/dev/null").c_str())
+#elif defined(_WIN32)
+#include <windows.h>
+#define OPEN_BROWSER(url) ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL)
+#else
+#include <cstdlib>
+#define OPEN_BROWSER(url) std::system(("xdg-open \"" + url + "\" 2>/dev/null || firefox \"" + url + "\" 2>/dev/null || google-chrome \"" + url + "\" 2>/dev/null").c_str())
+#endif
 
 // CURL回调函数
 static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -20,10 +32,12 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, void* us
 
 MiotOAuth::MiotOAuth(const std::string& client_id, 
                      const std::string& redirect_uri,
-                     const std::string& cloud_server)
+                     const std::string& cloud_server,
+                     const std::string& token_file)
     : client_id_(client_id)
     , redirect_uri_(redirect_uri)
-    , cloud_server_(cloud_server) {
+    , cloud_server_(cloud_server)
+    , token_file_(token_file) {
     
     // 设置OAuth服务器地址
     if (cloud_server == "cn") {
@@ -315,9 +329,172 @@ std::string MiotOAuth::http_post(const std::string& url, const std::string& data
 }
 
 bool MiotOAuth::start_auth_flow() {
-    // This is a placeholder for future implementation
-    return false;
+
+    should_exit_ = false;
+    token_refresh_thread_ = std::thread([this]() { token_refresh_loop(); });
+
+
+    return true;
 }
 
+bool MiotOAuth::stop_auth_flow() {
+    should_exit_ = true;
+    token_refresh_thread_.join();
+    return true;
+}
+
+void MiotOAuth::token_refresh_loop() {
+
+    std::cout << "[MiotOAuth] Token refresh loop started" << std::endl;
+    // 尝试加载已有token
+    std::cout << "Checking for existing token..." << std::endl;
+    std::cout << "═══════════════════════════════════════════════════════════\n\n";
+    
+    if (!init(token_file_)) {
+        std::cout << "\n";
+        std::cout << "═══════════════════════════════════════════════════════════\n";
+        std::cout << "需要进行小米账号授权 / Xiaomi Account Authorization Required\n";
+        std::cout << "═══════════════════════════════════════════════════════════\n";
+        std::cout << "\n";
+        
+        // 创建HTTP服务器接收回调
+        miot::SimpleHttpServer server(8000, true);
+        
+        bool auth_success = false;
+        
+        // 设置回调处理函数
+        auto callback = [&](const std::string& code, const std::string& state) {
+            std::cout << "\n";
+            std::cout << "═══════════════════════════════════════════════════════════\n";
+            std::cout << "Exchanging authorization code for token...\n";
+            std::cout << "═══════════════════════════════════════════════════════════\n";
+            auth_success = exchange_code_for_token(code, state);
+        };
+        
+        // 启动HTTP服务器
+        if (!server.start(callback)) {
+            std::cerr << "✗ Failed to start HTTP server" << std::endl;
+            std::cerr << "  Please check if port 8888 is already in use" << std::endl;
+            return;
+        }
+        
+        // 生成授权URL
+        std::string auth_url = generate_auth_url();
+        
+        std::cout << "\n请在浏览器中打开以下URL进行授权：\n";
+        std::cout << "Please open the following URL in your browser:\n\n";
+        std::cout << "┌────────────────────────────────────────────────────────────┐\n";
+        std::cout << "│ " << auth_url << "\n";
+        std::cout << "└────────────────────────────────────────────────────────────┘\n";
+        std::cout << "\n";
+        
+        // 尝试自动打开浏览器
+        std::cout << "Attempting to open browser automatically...\n";
+        int open_result = OPEN_BROWSER(auth_url);
+        if (open_result == 0) {
+            std::cout << "✓ Browser opened successfully\n";
+        } else {
+            std::cout << "⚠ Please manually open the URL above\n";
+        }
+        
+        std::cout << "\n";
+        std::cout << "Waiting for authorization...\n";
+        std::cout << "(Press Ctrl+C to cancel)\n";
+        std::cout << "\n";
+        
+        // 等待授权完成
+        while (server.is_running() && !should_exit_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        if (should_exit_) {
+            std::cout << "\nAuthorization cancelled by user\n";
+            return;
+        }
+        
+        if (!auth_success) {
+            std::cerr << "\n✗ Authorization failed\n";
+            return;
+        }
+
+        std::cout << "Authorization successful\n";
+    }
+    
+    // 验证token
+    if (!is_token_valid()) {
+        std::cerr << "\n✗ Token is invalid\n";
+        return;
+    }
+    
+    std::cout << "\n";
+    std::cout << "╔════════════════════════════════════════════════════════════╗\n";
+    std::cout << "║              ✓ Authorization Successful                    ║\n";
+    std::cout << "╚════════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "Access Token: " << token_.access_token.substr(0, 30) << "...\n";
+    std::cout << "\n";
+    
+    // 计算token过期时间
+    auto now = std::chrono::system_clock::now();
+    auto expires_at = token_.expires_at;
+    auto duration = std::chrono::duration_cast<std::chrono::minutes>(expires_at - now);
+    std::cout << "Token expires in: " << duration.count() << " minutes\n";
+    std::cout << "\n";
+    
+    // 主循环：自动刷新token
+    std::cout << "═══════════════════════════════════════════════════════════\n";
+    std::cout << "Entering main loop - Token will auto-refresh when needed\n";
+    std::cout << "Press Ctrl+C to exit\n";
+    std::cout << "═══════════════════════════════════════════════════════════\n";
+    std::cout << "\n";
+    
+    int check_count = 0;
+    while (!should_exit_) {
+        if (token_.needs_refresh()) {
+            std::cout << "\n[" << ++check_count << "] Token expiring soon, refreshing...\n";
+            if (!refresh_token()) {
+                std::cerr << "✗ Failed to refresh token\n";
+                std::cerr << "  Please re-run the program to re-authenticate\n";
+                return;
+            }
+            
+            // 显示新的过期时间
+            now = std::chrono::system_clock::now();
+            expires_at = token_.expires_at;
+            duration = std::chrono::duration_cast<std::chrono::minutes>(expires_at - now);
+            std::cout << "New token expires in: " << duration.count() << " minutes\n";
+        }
+        
+        // 每分钟检查一次
+        for (int i = 0; i < 60 && !should_exit_; i++) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+    
+    std::cout << "\n✓ Program exited gracefully\n\n";
+}
+
+bool MiotOAuth::get_token(TokenInfo& token,std::chrono::seconds timeout) {
+    auto start_time = std::chrono::steady_clock::now();
+    auto end_time = start_time + timeout;
+    
+    while (std::chrono::steady_clock::now() < end_time) {
+        if (is_token_valid()) {
+            token = token_;
+            return true;
+        }
+        
+        // 每100ms检查一次
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    // 超时，最后再检查一次
+    if (is_token_valid()) {
+        token = token_;
+        return true;
+    }
+    
+    return false;
+}
 } // namespace miot
 

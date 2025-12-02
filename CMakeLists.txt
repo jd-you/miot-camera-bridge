@@ -21,7 +21,7 @@ find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
 
 find_package(nlohmann_json 3.2.0 REQUIRED)
-
+include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Library: MIoT LAN Device Discovery
 add_library(miot_lan_device
@@ -41,6 +41,11 @@ add_library(miot_cloud_client
     miot_cloud_client.cpp
 )
 
+# Library: MIoT Camera Client
+add_library(miot_camera_client
+    miot_camera_client.cpp
+)
+
 target_include_directories(miot_cloud_client PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${OPENSSL_INCLUDE_DIR}
@@ -53,14 +58,22 @@ target_link_libraries(miot_cloud_client
     CURL::libcurl
 )
 
+
 # Executable: LAN Discovery Demo (original)
 add_executable(miot_lan_discovery_demo
-    main.cpp
+    bridge_main.cpp
+    src/miot_oauth.cpp
+    src/http_server.cpp
 )
 
 target_link_libraries(miot_lan_discovery_demo
     miot_lan_device
     Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    CURL::libcurl
+    miot_cloud_client
+    miot_camera_client
 )
 
 # Executable: Integrated Demo (LAN Discovery + Cloud API)
@@ -74,10 +87,7 @@ target_link_libraries(miot_discovery_with_cloud
     Threads::Threads
 )
 
-# Library: MIoT Camera Client
-add_library(miot_camera_client
-    miot_camera_client.cpp
-)
+
 
 target_include_directories(miot_camera_client PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -112,28 +122,28 @@ install(FILES miot_lan_device.h miot_cloud_client.h miot_camera_client.h
     DESTINATION include
 )
 
-# 包含目录
-include_directories(${CMAKE_SOURCE_DIR}/include)
-include_directories(${OPENSSL_INCLUDE_DIR})
+# # 包含目录
+# include_directories(${CMAKE_SOURCE_DIR}/include)
+# include_directories(${OPENSSL_INCLUDE_DIR})
 
-# 源文件
-set(SOURCES
-    src/main.cpp
-    src/miot_oauth.cpp
-    src/http_server.cpp
-)
+# # 源文件
+# set(SOURCES
+#     src/main.cpp
+#     src/miot_oauth.cpp
+#     src/http_server.cpp
+# )
 
-# 可执行文件
-add_executable(miot_bridge ${SOURCES})
+# # 可执行文件
+# add_executable(miot_bridge ${SOURCES})
 
-# 链接库
-target_link_libraries(miot_bridge
-    CURL::libcurl
-    nlohmann_json::nlohmann_json
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    pthread
-)
+# # 链接库
+# target_link_libraries(miot_bridge
+#     CURL::libcurl
+#     nlohmann_json::nlohmann_json
+#     OpenSSL::SSL
+#     OpenSSL::Crypto
+#     pthread
+# )
 
-# 安装
-install(TARGETS miot_bridge DESTINATION bin)
+# # 安装
+# install(TARGETS miot_bridge DESTINATION bin)
