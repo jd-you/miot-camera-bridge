@@ -19,6 +19,12 @@ endif()
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GST REQUIRED 
+    gstreamer-1.0
+    gstreamer-rtsp-server-1.0
+    gstreamer-app-1.0
+)
 
 find_package(nlohmann_json 3.2.0 REQUIRED)
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -64,6 +70,10 @@ add_executable(miot_lan_discovery_demo
     bridge_main.cpp
     src/miot_oauth.cpp
     src/http_server.cpp
+    gst_rtsp_server.cpp    
+)
+target_include_directories(miot_lan_discovery_demo PRIVATE
+    ${GST_INCLUDE_DIRS}
 )
 
 target_link_libraries(miot_lan_discovery_demo
@@ -74,6 +84,7 @@ target_link_libraries(miot_lan_discovery_demo
     CURL::libcurl
     miot_cloud_client
     miot_camera_client
+    ${GST_LIBRARIES}
 )
 
 # Executable: Integrated Demo (LAN Discovery + Cloud API)
