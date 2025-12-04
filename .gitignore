@@ -59,3 +59,4 @@ _deps/
 # Backup files
 *.bak
 *.backup
+miot_token.json
