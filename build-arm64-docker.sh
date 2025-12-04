@@ -24,7 +24,25 @@ if ! docker buildx version > /dev/null 2>&1; then
 fi
 echo "✅ Docker buildx available"
 
-PROJECT_DIR="/Users/jiadiy/Workspace/miot_camera_bridge"
+# Check and setup QEMU for cross-platform builds (only needed on non-arm64 hosts)
+HOST_ARCH=$(uname -m)
+if [ "$HOST_ARCH" != "aarch64" ] && [ "$HOST_ARCH" != "arm64" ]; then
+    echo ""
+    echo "Checking QEMU binfmt support for ARM64 emulation..."
+    
+    # Check if arm64 emulation is already available
+    if ! docker run --rm --platform=linux/arm64 ubuntu:22.04 uname -m > /dev/null 2>&1; then
+        echo "Installing QEMU binfmt support..."
+        docker run --privileged --rm tonistiigi/binfmt --install arm64
+        echo "✅ QEMU binfmt installed"
+    else
+        echo "✅ QEMU binfmt already configured"
+    fi
+else
+    echo "✅ Running on ARM64, no emulation needed"
+fi
+
+PROJECT_DIR=$PWD
 cd "$PROJECT_DIR"
 
 # Check for ARM64 library
@@ -137,21 +155,5 @@ echo "=================================================="
 echo ""
 echo "Built binaries in: build-arm64/"
 echo ""
-echo "Next steps:"
-echo ""
-echo "1. Create deployment package:"
-echo "   tar czf miot-camera-arm64.tar.gz \\"
-echo "       build-arm64/test_first_frame \\"
-echo "       build-arm64/miot_discovery_with_cloud \\"
-echo "       libs/linux/arm64/libmiot_camera_lite.so \\"
-echo "       token.txt"
-echo ""
-echo "2. Copy to your ARM64 device:"
-echo "   scp miot-camera-arm64.tar.gz user@your-device:~/"
-echo ""
-echo "3. On the ARM64 device:"
-echo "   tar xzf miot-camera-arm64.tar.gz"
-echo "   export LD_LIBRARY_PATH=\$PWD/libs/linux/arm64:\$LD_LIBRARY_PATH"
-echo "   ./build-arm64/test_first_frame -f token.txt -d DID -m MODEL -p PIN"
-echo ""
+
 
