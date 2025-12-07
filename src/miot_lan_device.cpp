@@ -494,9 +494,6 @@ void MIoTLanDiscovery::update_device(
         
         devices_[did] = device;
         status_changed = true;
-        
-        std::cout << "[MIoTLanDiscovery] New device: " << did 
-                  << " @ " << ip << " (" << interface_name << ")" << std::endl;
     } else {
         // Existing device
         auto& device = it->second;
@@ -505,24 +502,18 @@ void MIoTLanDiscovery::update_device(
             device->online = true;
             status_changed = true;
             device->status_changed_type = DeviceStatusChangedType::ONLINE;
-            std::cout << "[MIoTLanDiscovery] Device online: " << did 
-                      << " @ " << ip << std::endl;
         }
         
         if (device->ip != ip) {
             device->ip = ip;
             status_changed = true;
             device->status_changed_type = DeviceStatusChangedType::IP_CHANGED;
-            std::cout << "[MIoTLanDiscovery] Device IP changed: " << did 
-                      << " -> " << ip << std::endl;
         }
         
         if (device->interface != interface_name) {
             device->interface = interface_name;
             status_changed = true;
             device->status_changed_type = DeviceStatusChangedType::INTERFACE_CHANGED;
-            std::cout << "[MIoTLanDiscovery] Device interface changed: " << did 
-                      << " -> " << interface_name << std::endl;
         }
         
         device->timestamp_offset = timestamp_offset;

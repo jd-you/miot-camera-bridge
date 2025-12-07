@@ -16,9 +16,6 @@ namespace miot {
 #ifdef __APPLE__
 #include <cstdlib>
 #define OPEN_BROWSER(url) std::system(("open \"" + url + "\" 2>/dev/null").c_str())
-#elif defined(_WIN32)
-#include <windows.h>
-#define OPEN_BROWSER(url) ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL)
 #else
 #include <cstdlib>
 #define OPEN_BROWSER(url) std::system(("xdg-open \"" + url + "\" 2>/dev/null || firefox \"" + url + "\" 2>/dev/null || google-chrome \"" + url + "\" 2>/dev/null").c_str())
@@ -371,13 +368,6 @@ void MiotOAuth::token_refresh_loop() {
             auth_success = exchange_code_for_token(code, state);
         };
         
-        // 启动HTTP服务器
-        if (!server.start(callback)) {
-            std::cerr << "✗ Failed to start HTTP server" << std::endl;
-            std::cerr << "  Please check if port 8888 is already in use" << std::endl;
-            return;
-        }
-        
         // 生成授权URL
         std::string auth_url = generate_auth_url();
         
@@ -401,6 +391,13 @@ void MiotOAuth::token_refresh_loop() {
         std::cout << "Waiting for authorization...\n";
         std::cout << "(Press Ctrl+C to cancel)\n";
         std::cout << "\n";
+
+        // 启动HTTP服务器
+        if (!server.start(callback)) {
+            std::cerr << "✗ Failed to start HTTP server" << std::endl;
+            std::cerr << "  Please check if port 8888 is already in use" << std::endl;
+            return;
+        }
         
         // 等待授权完成
         while (server.is_running() && !should_exit_) {

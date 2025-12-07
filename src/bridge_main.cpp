@@ -145,16 +145,15 @@ void device_status_changed_callback(const std::string& did, const DeviceInfo& in
             break;
         }
         case DeviceStatusChangedType::ONLINE:
-            std::cout << "[DeviceStatusChangedCallback] Device is online" << std::endl;
+            std::cout << "[DeviceStatusChangedCallback] Device " << camera_bridge_context.cloud_devices[did]->name << " is online" << std::endl;
             break;
         case DeviceStatusChangedType::OFFLINE:
-            std::cout << "[DeviceStatusChangedCallback] Device is offline" << std::endl;
+            std::cout << "[DeviceStatusChangedCallback] Device " << camera_bridge_context.cloud_devices[did]->name << " is offline" << std::endl;
             break;
         case DeviceStatusChangedType::IP_CHANGED:
-            std::cout << "[DeviceStatusChangedCallback] Device IP changed" << std::endl;
+            std::cout << "[DeviceStatusChangedCallback] Device " << camera_bridge_context.cloud_devices[did]->name << " IP changed to " << info.ip << std::endl;
             break;
         case DeviceStatusChangedType::INTERFACE_CHANGED:
-            std::cout << "[DeviceStatusChangedCallback] Device interface changed" << std::endl;
             break;
         default:
             break;
