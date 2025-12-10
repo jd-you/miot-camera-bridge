@@ -14,15 +14,6 @@ build-arm64/
 *.gch
 *.pch
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-*.so
-*.so.*
-*.dylib
-*.dll
 
 # Executables
 *.exe
