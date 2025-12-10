@@ -355,7 +355,7 @@ void MiotOAuth::token_refresh_loop() {
         std::cout << "\n";
         
         // 创建HTTP服务器接收回调
-        miot::SimpleHttpServer server(8000, true);
+        miot::SimpleHttpServer server(8888);
         
         bool auth_success = false;
         
