@@ -536,5 +536,6 @@ void MIoTCameraClient::handle_status_change(const std::string& did, int status) 
     }
 }
 
+
 } // namespace miot
 

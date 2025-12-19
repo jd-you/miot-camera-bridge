@@ -19,6 +19,11 @@ struct VideoFrame {
     bool is_keyframe;
 };
 
+struct AudioFrame {
+    std::vector<uint8_t> data;
+    uint64_t timestamp;
+};
+
 class GstRtspServer {
 public:
     GstRtspServer(int port = 8554, const std::string& mount_point = "/camera");
@@ -33,8 +38,11 @@ public:
     // 停止 RTSP 服务器
     void stop();
     
-    // 推送 H265 帧数据
-    void push_frame(const std::vector<uint8_t>& data, uint64_t timestamp, bool is_keyframe);
+    // 推送视频帧数据
+    void push_video_frame(const std::vector<uint8_t>& data, uint64_t timestamp, bool is_keyframe);
+    
+    // 推送音频帧数据
+    void push_audio_frame(const std::vector<uint8_t>& data, uint64_t timestamp);
     
     // 获取 RTSP URL
     std::string get_url() const;
@@ -53,11 +61,14 @@ private:
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
 
-    uint64_t base_timestamp_ = 0;       // 基准时间戳
-    bool first_frame_ = true;           // 是否是第一帧
+    uint64_t video_base_timestamp_ = 0;  // 视频基准时间戳
+    uint64_t audio_base_timestamp_ = 0;  // 音频基准时间戳
+    bool first_video_frame_ = true;      // 是否是第一个视频帧
+    bool first_audio_frame_ = true;      // 是否是第一个音频帧
     
     // appsrc 相关
-    GstElement* appsrc_ = nullptr;
+    GstElement* video_appsrc_ = nullptr;
+    GstElement* audio_appsrc_ = nullptr;
     
     // 静态回调
     static void media_configure_callback(GstRTSPMediaFactory* factory, 

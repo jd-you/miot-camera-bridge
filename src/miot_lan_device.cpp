@@ -98,7 +98,7 @@ MIoTLanDiscovery::MIoTLanDiscovery(
     min_scan_interval_(5.0),
     max_scan_interval_(45.0),
     current_scan_interval_(5.0),
-    device_timeout_(100.0)
+    device_timeout_(600.0)
 {
 #ifdef _WIN32
     // Initialize Winsock

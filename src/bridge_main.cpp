@@ -131,14 +131,28 @@ void device_status_changed_callback(const std::string& did, const DeviceInfo& in
                     }
 
                     // std::cout << "[RawVideoCallback] Received frame: " << frame.data.size() << " bytes, timestamp: " << frame.timestamp << ", frame_type: " << is_keyframe << std::endl;
-                    camera_bridge_context.rtsp_servers["/xiaomi_camera"]->push_frame(frame.data, frame.timestamp, is_keyframe);
+                    camera_bridge_context.rtsp_servers["/xiaomi_camera"]->push_video_frame(frame.data, frame.timestamp, is_keyframe);
                 });
 
                 camera_bridge_context.camera_client->register_status_callback(did, [](const std::string& did, CameraStatus status) {
                     std::cout << "[StatusChangeCallback] Camera status changed: " << did << " -> " << static_cast<int>(status) << std::endl;
                 });
 
-                camera_bridge_context.camera_client->start_camera(did, "", VideoQuality::HIGH, false);
+                // 注册音频回调
+                camera_bridge_context.camera_client->register_raw_audio_callback(did, 0, [](const std::string& did, const RawFrameData& frame) {
+                    static int audio_frame_count = 0;
+                    if (audio_frame_count++ < 5) {
+                        std::cout << "[RawAudioCallback] Received audio frame: " << frame.data.size() 
+                                  << " bytes, codec: " << static_cast<int>(frame.codec_id)
+                                  << ", timestamp: " << frame.timestamp << std::endl;
+                    }
+                    
+                    // 推送音频帧到 RTSP
+                    camera_bridge_context.rtsp_servers["/xiaomi_camera"]->push_audio_frame(frame.data, frame.timestamp);
+                });
+
+                // 启用音频
+                camera_bridge_context.camera_client->start_camera(did, "", VideoQuality::HIGH, true);
 
                 std::cout << "[DeviceStatusChangedCallback] Camera started" << std::endl;   
             }
@@ -146,9 +160,11 @@ void device_status_changed_callback(const std::string& did, const DeviceInfo& in
         }
         case DeviceStatusChangedType::ONLINE:
             std::cout << "[DeviceStatusChangedCallback] Device " << camera_bridge_context.cloud_devices[did]->name << " is online" << std::endl;
+            camera_bridge_context.camera_client->start_camera(did, "", VideoQuality::HIGH, true);
             break;
         case DeviceStatusChangedType::OFFLINE:
             std::cout << "[DeviceStatusChangedCallback] Device " << camera_bridge_context.cloud_devices[did]->name << " is offline" << std::endl;
+            camera_bridge_context.camera_client->stop_camera(did);
             break;
         case DeviceStatusChangedType::IP_CHANGED:
             std::cout << "[DeviceStatusChangedCallback] Device " << camera_bridge_context.cloud_devices[did]->name << " IP changed to " << info.ip << std::endl;

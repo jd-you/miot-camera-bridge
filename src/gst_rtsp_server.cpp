@@ -31,13 +31,21 @@ bool GstRtspServer::init() {
     // 创建 media factory
     GstRTSPMediaFactory* factory = gst_rtsp_media_factory_new();
     
-    // H265 RTSP pipeline
-    // appsrc 接收原始 H265 数据，然后通过 rtph265pay 打包成 RTP
+    // 支持音视频的 RTSP pipeline
+    // 视频: H265 
+    // 音频: G711A (PCMA)
     const char* launch_str = 
-        "( appsrc name=videosrc is-live=true format=time "
+        "( "
+        // 视频流
+        "appsrc name=videosrc is-live=true format=time "
         "  caps=video/x-h265,stream-format=byte-stream,alignment=au "
         "! h265parse "
-        "! rtph265pay name=pay0 pt=96 config-interval=1 )";
+        "! rtph265pay name=pay0 pt=96 config-interval=1 "
+        // 音频流 (G711A/PCMA)
+        "appsrc name=audiosrc is-live=true format=time "
+        "  caps=audio/x-alaw,rate=8000,channels=1 "
+        "! rtppcmapay name=pay1 pt=8 "
+        ")";
     
     gst_rtsp_media_factory_set_launch(factory, launch_str);
     gst_rtsp_media_factory_set_shared(factory, TRUE);  // 允许多客户端
@@ -51,7 +59,7 @@ bool GstRtspServer::init() {
     gst_rtsp_mount_points_add_factory(mounts, mount_point_.c_str(), factory);
     g_object_unref(mounts);
     
-    std::cout << "RTSP Server initialized on port " << port_ << std::endl;
+    std::cout << "RTSP Server (Audio+Video) initialized on port " << port_ << std::endl;
     return true;
 }
 
@@ -105,18 +113,18 @@ void GstRtspServer::stop() {
     }
 }
 
-void GstRtspServer::push_frame(const std::vector<uint8_t>& data, 
+void GstRtspServer::push_video_frame(const std::vector<uint8_t>& data, 
                                 uint64_t timestamp, 
                                 bool is_keyframe) {
-    if (!running_ || !appsrc_) {
+    if (!running_ || !video_appsrc_) {
         // 如果还没有客户端连接，暂存帧（可选）
         return;
     }
 
-    if (first_frame_) {
-        base_timestamp_ = timestamp;
-        first_frame_ = false;
-        std::cout << "First frame timestamp (base): " << base_timestamp_ << std::endl;
+    if (first_video_frame_) {
+        video_base_timestamp_ = timestamp;
+        first_video_frame_ = false;
+        std::cout << "First video frame timestamp (base): " << video_base_timestamp_ << std::endl;
     }
     
     // 创建 GstBuffer
@@ -127,10 +135,9 @@ void GstRtspServer::push_frame(const std::vector<uint8_t>& data,
     memcpy(map.data, data.data(), data.size());
     gst_buffer_unmap(buffer, &map);
     
-    // 设置时间戳 (转换为纳秒)
-    
-    GST_BUFFER_PTS(buffer) = (timestamp - base_timestamp_) * GST_MSECOND;  // 假设 timestamp 是微秒
-    GST_BUFFER_DTS(buffer) = (timestamp - base_timestamp_) * GST_MSECOND;
+    // 设置相对时间戳 (转换为纳秒)
+    GST_BUFFER_PTS(buffer) = (timestamp - video_base_timestamp_) * GST_MSECOND;
+    GST_BUFFER_DTS(buffer) = GST_BUFFER_PTS(buffer);
     GST_BUFFER_DURATION(buffer) = GST_CLOCK_TIME_NONE;
     
     // 设置关键帧标志
@@ -140,11 +147,55 @@ void GstRtspServer::push_frame(const std::vector<uint8_t>& data,
     
     // 推送到 appsrc
     GstFlowReturn ret;
-    g_signal_emit_by_name(appsrc_, "push-buffer", buffer, &ret);
+    g_signal_emit_by_name(video_appsrc_, "push-buffer", buffer, &ret);
     gst_buffer_unref(buffer);
     
     if (ret != GST_FLOW_OK) {
-        std::cerr << "Failed to push buffer to appsrc" << ret << std::endl;
+        if (ret == GST_FLOW_FLUSHING) {
+            std::cout << "Video: Client disconnected (flushing)" << std::endl;
+        } else {
+            std::cerr << "Failed to push video buffer: " << ret << std::endl;
+        }
+    }
+}
+
+void GstRtspServer::push_audio_frame(const std::vector<uint8_t>& data, 
+                                      uint64_t timestamp) {
+    if (!running_ || !audio_appsrc_) {
+        // 如果还没有客户端连接或音频未启用
+        return;
+    }
+
+    if (first_audio_frame_) {
+        audio_base_timestamp_ = timestamp;
+        first_audio_frame_ = false;
+        std::cout << "First audio frame timestamp (base): " << audio_base_timestamp_ << std::endl;
+    }
+    
+    // 创建 GstBuffer
+    GstBuffer* buffer = gst_buffer_new_allocate(nullptr, data.size(), nullptr);
+    
+    GstMapInfo map;
+    gst_buffer_map(buffer, &map, GST_MAP_WRITE);
+    memcpy(map.data, data.data(), data.size());
+    gst_buffer_unmap(buffer, &map);
+    
+    // 设置相对时间戳 (转换为纳秒)
+    GST_BUFFER_PTS(buffer) = (timestamp - audio_base_timestamp_) * GST_MSECOND;
+    GST_BUFFER_DTS(buffer) = GST_BUFFER_PTS(buffer);
+    GST_BUFFER_DURATION(buffer) = GST_CLOCK_TIME_NONE;
+    
+    // 推送到 appsrc
+    GstFlowReturn ret;
+    g_signal_emit_by_name(audio_appsrc_, "push-buffer", buffer, &ret);
+    gst_buffer_unref(buffer);
+    
+    if (ret != GST_FLOW_OK) {
+        if (ret == GST_FLOW_FLUSHING) {
+            std::cout << "Audio: Client disconnected (flushing)" << std::endl;
+        } else {
+            std::cerr << "Failed to push audio buffer: " << ret << std::endl;
+        }
     }
 }
 
@@ -161,19 +212,34 @@ void GstRtspServer::media_configure_callback(GstRTSPMediaFactory* factory,
     
     GstElement* element = gst_rtsp_media_get_element(media);
     
-    // 获取 appsrc
-    self->appsrc_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "videosrc");
+    // 获取视频 appsrc
+    self->video_appsrc_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "videosrc");
     
-    if (self->appsrc_) {
-        // 配置 appsrc
-        g_object_set(self->appsrc_,
+    if (self->video_appsrc_) {
+        // 配置视频 appsrc
+        g_object_set(self->video_appsrc_,
                      "stream-type", 0,  // GST_APP_STREAM_TYPE_STREAM
                      "format", GST_FORMAT_TIME,
                      "is-live", TRUE,
                      nullptr);
         
-        std::cout << "RTSP client connected, appsrc configured" << std::endl;
+        std::cout << "RTSP client connected, video appsrc configured" << std::endl;
     }
+    
+    // 获取音频 appsrc
+    self->audio_appsrc_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "audiosrc");
+    
+    if (self->audio_appsrc_) {
+        // 配置音频 appsrc
+        g_object_set(self->audio_appsrc_,
+                     "stream-type", 0,  // GST_APP_STREAM_TYPE_STREAM
+                     "format", GST_FORMAT_TIME,
+                     "is-live", TRUE,
+                     nullptr);
+        
+        std::cout << "RTSP client connected, audio appsrc configured" << std::endl;
+    }
+    
     g_signal_connect(media, "unprepared", G_CALLBACK(media_unprepared_callback), self);
     g_object_unref(element);
 }
@@ -188,16 +254,22 @@ void GstRtspServer::need_data_callback(GstElement* appsrc,
 void GstRtspServer::media_unprepared_callback(GstRTSPMedia* media, gpointer user_data) {
     GstRtspServer* self = static_cast<GstRtspServer*>(user_data);
 
-
     // 重置状态
-    self->first_frame_ = true;
-    self->base_timestamp_ = 0;
+    self->first_video_frame_ = true;
+    self->first_audio_frame_ = true;
+    self->video_base_timestamp_ = 0;
+    self->audio_base_timestamp_ = 0;
 
     std::cout << "RTSP client disconnected, clearing appsrc" << std::endl;
 
-    if (self->appsrc_) {
-        g_object_unref(self->appsrc_);
-        self->appsrc_ = nullptr;
+    if (self->video_appsrc_) {
+        g_object_unref(self->video_appsrc_);
+        self->video_appsrc_ = nullptr;
+    }
+    
+    if (self->audio_appsrc_) {
+        g_object_unref(self->audio_appsrc_);
+        self->audio_appsrc_ = nullptr;
     }
 }
 
